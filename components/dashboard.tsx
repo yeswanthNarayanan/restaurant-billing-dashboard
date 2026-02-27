@@ -3,24 +3,70 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { getTodaysSales, getSalesByHour } from '@/lib/db';
-import { TrendingUp, ShoppingCart, Zap } from 'lucide-react';
-import type { SalesData } from '@/lib/supabase';
+import { getTodaysSales, getSalesByHour, getBills, getBillItems, getMenuItems } from '@/lib/db';
+import { TrendingUp, ShoppingCart, Zap, Receipt } from 'lucide-react';
+import type { SalesData, Bill, BillItem, MenuItem } from '@/lib/supabase';
+
+interface BillWithItems extends Bill {
+  items: (BillItem & { itemName?: string })[];
+  itemCount?: number;
+}
 
 export function Dashboard() {
   const [sales, setSales] = useState<SalesData[]>([]);
+  const [bills, setBills] = useState<BillWithItems[]>([]);
   const [loading, setLoading] = useState(true);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
   useEffect(() => {
-    const loadSales = async () => {
+    const loadData = async () => {
       setLoading(true);
-      const today = new Date().toISOString().split('T')[0];
-      const data = await getSalesByHour(today);
-      setSales(data);
-      setLoading(false);
+      try {
+        // Load sales data
+        const today = new Date().toISOString().split('T')[0];
+        const salesData = await getSalesByHour(today);
+        setSales(salesData);
+
+        // Load menu items
+        const items = await getMenuItems();
+        setMenuItems(items);
+
+        // Load bills for today
+        const allBills = await getBills();
+        const itemMap = new Map(items.map(i => [i.id, i.name]));
+        
+        // Filter bills from today and get their items
+        const billsWithItems: BillWithItems[] = [];
+        for (const bill of allBills) {
+          const billDate = bill.created_at.split('T')[0];
+          if (billDate === today) {
+            const billItems = await getBillItems(bill.id);
+            const itemsWithNames = billItems.map(bi => ({
+              ...bi,
+              itemName: itemMap.get(bi.menu_item_id) || 'Unknown Item',
+            }));
+            billsWithItems.push({
+              ...bill,
+              items: itemsWithNames,
+              itemCount: itemsWithNames.length,
+            });
+          }
+        }
+
+        // Sort by most recent first
+        billsWithItems.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        setBills(billsWithItems);
+      } catch (error) {
+        console.error('[v0] Error loading dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    loadSales();
+    loadData();
   }, []);
 
   const { totalSales, mostSoldHour, ordersCount, chartData } = useMemo(() => {
@@ -130,6 +176,79 @@ export function Dashboard() {
               <Bar dataKey="sales" fill="#10b981" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        )}
+      </Card>
+
+      {/* Billing Details */}
+      <Card className="p-4 sm:p-6 bg-white dark:bg-slate-800">
+        <div className="flex items-center gap-2 mb-4">
+          <Receipt className="w-5 h-5 text-emerald-600" />
+          <h3 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
+            Today's Bills
+          </h3>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center h-48">
+            <p className="text-slate-500 text-sm">Loading bills...</p>
+          </div>
+        ) : bills.length === 0 ? (
+          <p className="text-slate-500 text-center py-8">No bills completed today</p>
+        ) : (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {bills.map((bill) => (
+              <div
+                key={bill.id}
+                className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600"
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs sm:text-sm">
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">Bill ID</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-mono break-all">{bill.id.substring(0, 12)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">Items</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-semibold">
+                      {bill.items.reduce((sum, item) => sum + item.quantity, 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">Amount</p>
+                    <p className="text-emerald-600 font-bold">₹{bill.total.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">Time</p>
+                    <p className="text-slate-900 dark:text-slate-100">
+                      {new Date(bill.created_at).toLocaleTimeString('en-IN', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                      })}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bill Items */}
+                <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-600 space-y-2">
+                  {bill.items.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs sm:text-sm">
+                      <div className="flex-1">
+                        <p className="text-slate-900 dark:text-slate-100">{item.itemName}</p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-2">
+                        <span className="text-slate-600 dark:text-slate-400">
+                          {item.quantity}x ₹{item.price.toFixed(2)}
+                        </span>
+                        <span className="text-slate-900 dark:text-slate-100 font-semibold">
+                          ₹{(item.quantity * item.price).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </Card>
     </div>

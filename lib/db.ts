@@ -58,6 +58,10 @@ export async function getBill(billId: string) {
   return db.bills.get(billId);
 }
 
+export async function getBills() {
+  return db.bills.toArray();
+}
+
 export async function updateBill(billId: string, updates: Partial<Bill>) {
   return db.bills.update(billId, updates);
 }

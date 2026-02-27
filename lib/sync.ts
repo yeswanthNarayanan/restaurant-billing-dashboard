@@ -21,18 +21,19 @@ export async function syncBillsToCloud(billIds?: string[]) {
  */
 export async function loadMenuItemsFromCloud() {
   try {
-    // Only try cloud if online
-    if (!navigator.onLine) {
-      console.log('[v0] Offline - loading menu items from local storage');
+    console.log('[v0] Attempting to load menu items from cloud...');
+    
+    const { data, error } = await Promise.race([
+      supabase.from('menu_items').select('*').order('category'),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase request timeout')), 5000)
+      ),
+    ]) as any;
+
+    if (error) {
+      console.warn('[v0] Cloud load failed, using local storage:', error);
       return { success: true, count: 0, source: 'local' };
     }
-
-    const { data, error } = await supabase
-      .from('menu_items')
-      .select('*')
-      .order('category');
-
-    if (error) throw error;
 
     // Update local cache with cloud data
     if (data && data.length > 0) {
@@ -40,20 +41,21 @@ export async function loadMenuItemsFromCloud() {
       for (const item of data) {
         await db.menuItems.put(item);
       }
-      console.log('[v0] Menu items synced from cloud');
+      console.log('[v0] Menu items loaded from cloud:', data.length);
       return { success: true, count: data.length, source: 'cloud' };
     }
 
+    console.log('[v0] No menu items in cloud, using local storage');
     return { success: true, count: 0, source: 'cloud' };
   } catch (error) {
-    console.error('[v0] Error loading menu items from cloud:', error);
+    console.warn('[v0] Error loading from cloud (will use local):', error instanceof Error ? error.message : error);
     // Silently fall back to local storage
     return { success: true, count: 0, source: 'local' };
   }
 }
 
 /**
- * Sync a single menu item to cloud instantly when online
+ * Sync a single menu item to cloud instantly
  * Store locally in IndexedDB always
  */
 export async function syncMenuItemToCloud(item: any) {
@@ -62,20 +64,24 @@ export async function syncMenuItemToCloud(item: any) {
     await db.menuItems.put(item);
     console.log('[v0] Menu item saved locally:', item.id);
 
-    // If online, also push to Supabase
-    if (navigator.onLine) {
-      const { error } = await supabase
-        .from('menu_items')
-        .upsert(item, { onConflict: 'id' });
+    // Try to sync to Supabase with timeout
+    try {
+      const result = await Promise.race([
+        supabase.from('menu_items').upsert(item, { onConflict: 'id' }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Sync timeout')), 3000)
+        ),
+      ]) as any;
 
-      if (error) {
-        console.error(`[v0] Error syncing menu item to cloud ${item.id}:`, error);
+      if (result.error) {
+        console.warn(`[v0] Menu item local only (cloud sync failed) ${item.id}:`, result.error.message);
         return { success: true, synced: false, local: true };
       }
-      console.log('[v0] Menu item synced to cloud:', item.id);
+      
+      console.log('[v0] Menu item synced to cloud instantly:', item.id);
       return { success: true, synced: true, local: true };
-    } else {
-      console.log('[v0] Offline - menu item saved locally, will sync when online');
+    } catch (cloudError) {
+      console.warn(`[v0] Menu item local only (cloud unreachable) ${item.id}`);
       return { success: true, synced: false, local: true };
     }
   } catch (error) {
