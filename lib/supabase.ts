@@ -30,6 +30,7 @@ export type BillItem = {
   menu_item_id: string;
   quantity: number;
   price: number;
+  created_at?: string;
 };
 
 export type SalesData = {

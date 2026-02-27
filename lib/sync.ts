@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { db, getAllUnsyncedBills, getBillItems, updateBill } from './db';
+import { db, getAllUnsyncedBills, getBillItems, updateBill, getMenuItems, addMenuItem } from './db';
 
 /**
  * Bills are stored locally in IndexedDB only and are NOT synced to Supabase automatically.
@@ -66,22 +66,26 @@ export async function syncMenuItemToCloud(item: any) {
 
     // Try to sync to Supabase with timeout
     try {
-      const result = await Promise.race([
-        supabase.from('menu_items').upsert(item, { onConflict: 'id' }),
+      console.log('[v0] Syncing to Supabase:', item.id);
+      const { data, error } = await Promise.race([
+        supabase
+          .from('menu_items')
+          .upsert([item])
+          .select(),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Sync timeout')), 3000)
         ),
       ]) as any;
 
-      if (result.error) {
-        console.warn(`[v0] Menu item local only (cloud sync failed) ${item.id}:`, result.error.message);
+      if (error) {
+        console.warn(`[v0] Menu item local only (cloud sync failed) ${item.id}:`, error.message);
         return { success: true, synced: false, local: true };
       }
       
-      console.log('[v0] Menu item synced to cloud instantly:', item.id);
+      console.log('[v0] Menu item synced to cloud instantly:', item.id, data);
       return { success: true, synced: true, local: true };
     } catch (cloudError) {
-      console.warn(`[v0] Menu item local only (cloud unreachable) ${item.id}`);
+      console.warn(`[v0] Menu item local only (cloud unreachable) ${item.id}:`, cloudError instanceof Error ? cloudError.message : cloudError);
       return { success: true, synced: false, local: true };
     }
   } catch (error) {
@@ -95,30 +99,80 @@ export async function syncMenuItemToCloud(item: any) {
  */
 export async function syncMenuChangesOnReconnect() {
   try {
-    if (!navigator.onLine) return { success: false, synced: 0 };
-
     const items = await db.menuItems.toArray();
+    if (items.length === 0) {
+      console.log('[v0] No menu items to sync');
+      return { success: true, synced: 0 };
+    }
+
+    console.log('[v0] Syncing', items.length, 'menu items...');
     let syncedCount = 0;
     
     for (const item of items) {
       try {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('menu_items')
-          .upsert(item, { onConflict: 'id' });
+          .upsert([item])
+          .select();
 
         if (!error) {
           syncedCount++;
           console.log('[v0] Menu item synced on reconnect:', item.id);
+        } else {
+          console.warn('[v0] Error syncing menu item:', item.id, error);
         }
       } catch (err) {
         console.error(`[v0] Error syncing menu item ${item.id}:`, err);
       }
     }
 
+    console.log('[v0] Synced', syncedCount, 'menu items');
     return { success: true, synced: syncedCount };
   } catch (error) {
     console.error('[v0] Error syncing menu on reconnect:', error);
     return { success: false, synced: 0 };
+  }
+}
+
+/**
+ * Initialize sample menu items if database is empty
+ */
+export async function initializeSampleMenu() {
+  try {
+    const existingItems = await getMenuItems();
+    
+    if (existingItems.length > 0) {
+      console.log('[v0] Menu items already exist, skipping initialization');
+      return;
+    }
+
+    const sampleItems = [
+      { id: 'item_biryani', name: 'Biryani', category: 'Rice', price: 250, enabled: true },
+      { id: 'item_butter_chicken', name: 'Butter Chicken', category: 'Curries', price: 320, enabled: true },
+      { id: 'item_paneer_tikka', name: 'Paneer Tikka', category: 'Appetizers', price: 280, enabled: true },
+      { id: 'item_naan', name: 'Naan', category: 'Breads', price: 50, enabled: true },
+      { id: 'item_samosa', name: 'Samosa', category: 'Appetizers', price: 40, enabled: true },
+      { id: 'item_dosa', name: 'Dosa', category: 'South Indian', price: 120, enabled: true },
+      { id: 'item_idli', name: 'Idli', category: 'South Indian', price: 80, enabled: true },
+      { id: 'item_lassi', name: 'Lassi', category: 'Beverages', price: 60, enabled: true },
+      { id: 'item_chai', name: 'Chai', category: 'Beverages', price: 30, enabled: true },
+      { id: 'item_gulab_jamun', name: 'Gulab Jamun', category: 'Desserts', price: 100, enabled: true },
+    ];
+
+    console.log('[v0] Initializing sample menu items...');
+    for (const item of sampleItems) {
+      const menuItem = {
+        ...item,
+        created_at: new Date().toISOString(),
+      };
+      await addMenuItem(menuItem);
+      // Sync each item to cloud
+      await syncMenuItemToCloud(menuItem);
+    }
+
+    console.log('[v0] Sample menu items initialized and synced');
+  } catch (error) {
+    console.error('[v0] Error initializing sample menu:', error);
   }
 }
 

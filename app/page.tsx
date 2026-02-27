@@ -22,7 +22,7 @@ import {
   clearBillItems,
   getTodaysSales,
 } from '@/lib/db';
-import { syncMenuItemToCloud, loadMenuItemsFromCloud, setupSyncListener } from '@/lib/sync';
+import { syncMenuItemToCloud, loadMenuItemsFromCloud, setupSyncListener, initializeSampleMenu } from '@/lib/sync';
 import type { MenuItem, BillItem } from '@/lib/supabase';
 
 export default function POSDashboard() {
@@ -40,6 +40,9 @@ export default function POSDashboard() {
       try {
         setIsLoading(true);
         
+        // Initialize sample menu if needed (first run)
+        await initializeSampleMenu();
+        
         // Load menu items from cloud if online
         if (navigator.onLine) {
           await loadMenuItemsFromCloud();
@@ -48,6 +51,7 @@ export default function POSDashboard() {
         // Load menu items from local DB
         const items = await getMenuItems();
         setMenuItems(items);
+        console.log('[v0] Loaded menu items:', items.length);
         
         // Create a new bill
         const billId = await createBill();
