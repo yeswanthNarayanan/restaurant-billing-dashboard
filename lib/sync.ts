@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { db, getAllUnsyncedBills, getBillItems, updateBill, getMenuItems, addMenuItem } from './db';
+import { db, getAllUnsyncedBills, getBillItems, updateBill, getMenuItems, addMenuItem, getBills, getSalesByHour } from './db';
 
 /**
  * Bills are stored locally in IndexedDB only and are NOT synced to Supabase automatically.
@@ -217,4 +217,140 @@ export function setupSyncListener() {
   }
 
   return () => {};
+}
+
+/**
+ * MANUAL SYNC: Syncs ALL data from IndexedDB to Supabase
+ * This includes: menu items, bills, bill items, and sales data
+ * Called when user clicks the "Sync to Supabase" button
+ */
+export async function manualSyncAllDataToSupabase() {
+  try {
+    console.log('[v0] Starting manual full sync to Supabase...');
+    
+    let syncStats = {
+      menuItems: 0,
+      bills: 0,
+      billItems: 0,
+      salesData: 0,
+      errors: [] as string[],
+    };
+
+    // 1. Sync Menu Items
+    try {
+      console.log('[v0] Syncing menu items...');
+      const menuItems = await getMenuItems();
+      
+      if (menuItems.length > 0) {
+        const { error } = await supabase
+          .from('menu_items')
+          .upsert(menuItems)
+          .select();
+
+        if (error) {
+          syncStats.errors.push(`Menu items sync failed: ${error.message}`);
+          console.error('[v0] Menu items sync error:', error);
+        } else {
+          syncStats.menuItems = menuItems.length;
+          console.log('[v0] Synced', menuItems.length, 'menu items');
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      syncStats.errors.push(`Menu items error: ${msg}`);
+      console.error('[v0] Menu items sync error:', err);
+    }
+
+    // 2. Sync Bills
+    try {
+      console.log('[v0] Syncing bills...');
+      const bills = await getBills();
+      
+      if (bills.length > 0) {
+        const billsData = bills.map(({ synced, synced_at, ...bill }) => bill);
+        const { error } = await supabase
+          .from('bills')
+          .upsert(billsData)
+          .select();
+
+        if (error) {
+          syncStats.errors.push(`Bills sync failed: ${error.message}`);
+          console.error('[v0] Bills sync error:', error);
+        } else {
+          syncStats.bills = bills.length;
+          console.log('[v0] Synced', bills.length, 'bills');
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      syncStats.errors.push(`Bills error: ${msg}`);
+      console.error('[v0] Bills sync error:', err);
+    }
+
+    // 3. Sync Bill Items
+    try {
+      console.log('[v0] Syncing bill items...');
+      const allBillItems: any[] = [];
+      const bills = await getBills();
+      
+      for (const bill of bills) {
+        const items = await getBillItems(bill.id);
+        allBillItems.push(...items);
+      }
+
+      if (allBillItems.length > 0) {
+        const { error } = await supabase
+          .from('bill_items')
+          .upsert(allBillItems)
+          .select();
+
+        if (error) {
+          syncStats.errors.push(`Bill items sync failed: ${error.message}`);
+          console.error('[v0] Bill items sync error:', error);
+        } else {
+          syncStats.billItems = allBillItems.length;
+          console.log('[v0] Synced', allBillItems.length, 'bill items');
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      syncStats.errors.push(`Bill items error: ${msg}`);
+      console.error('[v0] Bill items sync error:', err);
+    }
+
+    // 4. Sync Sales Data
+    try {
+      console.log('[v0] Syncing sales data...');
+      const today = new Date().toISOString().split('T')[0];
+      const salesData = await getSalesByHour(today);
+      
+      if (salesData.length > 0) {
+        const { error } = await supabase
+          .from('sales_data')
+          .upsert(salesData)
+          .select();
+
+        if (error) {
+          syncStats.errors.push(`Sales data sync failed: ${error.message}`);
+          console.error('[v0] Sales data sync error:', error);
+        } else {
+          syncStats.salesData = salesData.length;
+          console.log('[v0] Synced', salesData.length, 'sales records');
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      syncStats.errors.push(`Sales data error: ${msg}`);
+      console.error('[v0] Sales data sync error:', err);
+    }
+
+    console.log('[v0] Manual sync complete:', syncStats);
+    return { success: true, stats: syncStats };
+  } catch (error) {
+    console.error('[v0] Critical error in manual sync:', error);
+    return { 
+      success: false, 
+      stats: { menuItems: 0, bills: 0, billItems: 0, salesData: 0, errors: ['Critical sync error'] } 
+    };
+  }
 }
