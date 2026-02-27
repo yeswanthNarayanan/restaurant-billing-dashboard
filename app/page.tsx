@@ -22,7 +22,7 @@ import {
   clearBillItems,
   getTodaysSales,
 } from '@/lib/db';
-import { syncBillsToCloud, loadMenuItemsFromCloud, setupSyncListener } from '@/lib/sync';
+import { syncMenuItemToCloud, loadMenuItemsFromCloud, setupSyncListener } from '@/lib/sync';
 import type { MenuItem, BillItem } from '@/lib/supabase';
 
 export default function POSDashboard() {
@@ -142,11 +142,9 @@ export default function POSDashboard() {
 
       // Show receipt modal
       setIsReceiptModalOpen(true);
-
-      // Attempt to sync
-      if (navigator.onLine) {
-        await syncBillsToCloud();
-      }
+      
+      // Bills stay local in IndexedDB only - no cloud sync
+      console.log('[v0] Bill completed and stored locally');
     } catch (error) {
       console.error('[v0] Error completing bill:', error);
     }
@@ -173,14 +171,23 @@ export default function POSDashboard() {
       ...item,
       created_at: new Date().toISOString(),
     };
+    // Add to local DB first
     await addMenuItem(newItem);
+    // Sync to cloud if online (instant sync for menu items)
+    await syncMenuItemToCloud(newItem);
     const updated = await getMenuItems();
     setMenuItems(updated);
   };
 
   const handleUpdateMenuItem = async (id: string, updates: Partial<MenuItem>) => {
+    // Update locally first
     await updateMenuItem(id, updates);
+    // Get updated item and sync to cloud if online
     const updated = await getMenuItems();
+    const item = updated.find(i => i.id === id);
+    if (item) {
+      await syncMenuItemToCloud(item);
+    }
     setMenuItems(updated);
   };
 

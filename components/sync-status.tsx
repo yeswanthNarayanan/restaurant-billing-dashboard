@@ -27,12 +27,18 @@ export function SyncStatus() {
       {isOnline ? (
         <>
           <Cloud className="w-4 h-4 text-emerald-600" />
-          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Cloud Sync</span>
+          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            Online
+            <span className="hidden sm:inline"> - Menu Synced</span>
+          </span>
         </>
       ) : (
         <>
           <CloudOff className="w-4 h-4 text-amber-600" />
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Local Save</span>
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            Offline
+            <span className="hidden sm:inline"> - Saving Locally</span>
+          </span>
         </>
       )}
     </div>
