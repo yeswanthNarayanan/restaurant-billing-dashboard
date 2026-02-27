@@ -105,11 +105,6 @@ export async function getSalesByHour(date: string) {
   return db.salesData.where('date').equals(date).toArray();
 }
 
-// Additional functions for sync and recordSale
-export async function recordSale(data: SalesData) {
-  return db.salesData.add(data);
-}
-
 export async function markBillsSynced(billIds: string[]) {
   const now = new Date().toISOString();
   for (const id of billIds) {

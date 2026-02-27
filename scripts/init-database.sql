@@ -1,5 +1,11 @@
+-- Drop existing tables to recreate with correct schema
+DROP TABLE IF EXISTS sales_data CASCADE;
+DROP TABLE IF EXISTS bill_items CASCADE;
+DROP TABLE IF EXISTS bills CASCADE;
+DROP TABLE IF EXISTS menu_items CASCADE;
+
 -- Create menu_items table
-CREATE TABLE IF NOT EXISTS menu_items (
+CREATE TABLE menu_items (
   id TEXT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   category VARCHAR(100) NOT NULL,
@@ -10,7 +16,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
 );
 
 -- Create bills table
-CREATE TABLE IF NOT EXISTS bills (
+CREATE TABLE bills (
   id TEXT PRIMARY KEY,
   total DECIMAL(10, 2) NOT NULL DEFAULT 0,
   items_count INTEGER NOT NULL DEFAULT 0,
@@ -20,7 +26,7 @@ CREATE TABLE IF NOT EXISTS bills (
 );
 
 -- Create bill_items table (line items for each bill)
-CREATE TABLE IF NOT EXISTS bill_items (
+CREATE TABLE bill_items (
   id TEXT PRIMARY KEY,
   bill_id TEXT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
   menu_item_id TEXT NOT NULL REFERENCES menu_items(id),
@@ -30,7 +36,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
 );
 
 -- Create sales_data table for daily/hourly tracking
-CREATE TABLE IF NOT EXISTS sales_data (
+CREATE TABLE sales_data (
   id TEXT PRIMARY KEY,
   bill_id TEXT NOT NULL REFERENCES bills(id),
   total DECIMAL(10, 2) NOT NULL,
