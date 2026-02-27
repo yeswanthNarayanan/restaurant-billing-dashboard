@@ -18,13 +18,17 @@ export function MenuGrid({ items, onSelectItem, isLoading = false }: MenuGridPro
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const categories = useMemo(() => {
-    const cats = new Set(items.filter(i => i.enabled).map(i => i.category));
+    const cats = new Set(
+      items
+        .filter((i) => i.enabled !== false)
+        .map((i) => i.category)
+    );
     return Array.from(cats).sort();
   }, [items]);
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
-      if (!item.enabled) return false;
+    return items.filter((item) => {
+      if (item.enabled === false) return false;
       if (selectedCategory && item.category !== selectedCategory) return false;
       return item.name.toLowerCase().includes(searchQuery.toLowerCase());
     });

@@ -21,6 +21,7 @@ export type Bill = {
   created_at: string;
   synced: boolean;
   synced_at?: string;
+  updated_at?: string;
 };
 
 export type BillItem = {
